@@ -1,0 +1,56 @@
+#!/bin/bash
+
+set -e
+
+# Declare an array of string with type
+declare -a StringArray=("SRR14101759"
+                        "SRR14101760"
+                        "SRR14101761"
+                        "SRR14101761"
+                        "SRR14101762"
+                        "SRR14101763"
+                        "SRR14101764"
+                        "SRR15305651"
+                        "SRR15305652"
+                        "SRR15305653")
+
+DATA=/media/storage3/aging
+OUTPUT_STAR=/media/storage3/aging/aging_out_45
+GENOME=dmel-all-chromosome-r6.45.fasta
+GTF=dmel-all-r6.45.gtf
+
+mkdir -p "$OUTPUT_STAR"/star_index "$OUTPUT_STAR"/star_align "$OUTPUT_STAR"/counts "$OUTPUT_STAR"/star_align/stat
+
+STAR --runThreadN 14 --runMode genomeGenerate --genomeDir "$OUTPUT_STAR"/star_index --genomeFastaFiles "$DATA"/"$GENOME" --sjdbGTFfile "$DATA"/"$GTF" --sjdbOverhang 99 --genomeSAindexNbases 12
+
+for file in ${StringArray[@]}; do
+	echo "Alignment "$file""
+	STAR --genomeDir "$OUTPUT_STAR"/star_index \
+		--runThreadN 16 \
+		--readFilesCommand zcat \
+		--readFilesIn "$file"_1.fastq.gz "$file"_2.fastq.gz \
+		--quantMode GeneCounts \
+		--sjdbGTFfile "$DATA"/"$GTF" \
+		--outSAMtype BAM SortedByCoordinate \
+		--outFileNamePrefix "$OUTPUT_STAR"/star_align/"$file"_
+
+	mv "$OUTPUT_STAR"/star_align/*final.out "$OUTPUT_STAR"/star_align/stat
+	rm -R "$OUTPUT_STAR"/star_align/*tmp | rm "$OUTPUT_STAR"/star_align/*.out "$OUTPUT_STAR"/star_align/*tab
+done
+
+for align in "$OUTPUT_STAR"/star_align/*.bam
+do
+	out=$(sed 's|/media.*align/||g' <<< "$align" | sed 's/_R_Aligned.*//g')
+	echo "Indexing "$out""
+	samtools index "$align"
+    featureCounts -B -p -a "$GTF" -C -T 16 "$align" -o "$OUTPUT_STAR"/counts/"$out".count --fracOverlap 1
+#	htseq-count "$align" "$DATA"/"$GTF" --order pos -s reverse > "$OUTPUT_STAR"/counts/"$out".count
+done
+
+#for file in ${StringArray[@]}; do
+#       echo -e "\n*---------- COUNT TE : ${file}"
+#       python3 "$TETOOLS" -bowtie2 -rosette "$ROSETTETXT" -column 2 -TE_fasta "$ROSETTEFASTA" -count "$DIRCOUNTTE"/"$file""_count.txt" -RNA "$DIRFASTQ"/"$file""1_val_1.fq.gz" -RNApair "$DIRFASTQ"/"$file""2_val_2.fq.gz" -insert 300
+
+#done
+
+echo "DONE!!!!!"
